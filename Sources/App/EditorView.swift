@@ -90,6 +90,12 @@ struct EditorView: View {
         .sheet(isPresented: $showsShortcuts) { ShortcutSheet(library: libraryMode, isFujifilmRAF: editor.canUseCamera) }
         .onAppear { editor.library = library }
         .onChange(of: library.selectedPaths, initial: true) { editor.selectedLibraryPaths = library.selectedPaths }
+        .alert("Couldn't save edits", isPresented: Binding(
+            get: { editor.blockedSwitch != nil },
+            set: { if !$0 { editor.cancelBlockedSwitch() } })) {
+            Button("Discard Edits", role: .destructive) { editor.discardEditsAndOpenBlocked() }
+            Button("Cancel", role: .cancel) { editor.cancelBlockedSwitch() }
+        } message: { Text(editor.blockedSwitch?.message ?? "") }
         .sheet(item: $exportRequest) { request in ExportSheet(request: request) }
         .onChange(of: editor.openRevision) { libraryMode = false }
         .onChange(of: editor.cameraPanelRevision) { expansion.camera = true }

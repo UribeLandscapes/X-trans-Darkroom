@@ -54,6 +54,7 @@ final class EditorModel: ObservableObject {
         coordinator.scheduleSettle(stack)
     }
     private var sliderCoalescing = SliderCoalescing()
+    private var persistence = SidecarPersistence()
     private var history = EditHistory(EditStack())
 
     var cameraSource: CameraSource { coordinator.cameraSource }
@@ -175,15 +176,41 @@ final class EditorModel: ObservableObject {
         } catch { statusLine = "Could not import profile: \(error)" }
     }
 
+    /// Set when a photo switch was blocked by a failed save; drives the confirmation alert.
+    struct BlockedSwitch: Equatable { let url: URL; let message: String }
+    @Published var blockedSwitch: BlockedSwitch?
+
     func open(_ url: URL) {
         sliderCoalescing.reset()
-        if coordinator.hasImage { persist() }
+        if coordinator.hasImage {
+            persist()
+            if case .blocked(let message) = persistence.prepareSwitch(stack, currentSource: coordinator.sourceURL) {
+                NSLog("XTransDarkroom: switch blocked: %@", message)
+                statusLine = message
+                blockedSwitch = BlockedSwitch(url: url, message: message)
+                return
+            }
+        }
+        openUnguarded(url)
+    }
+
+    func discardEditsAndOpenBlocked() {
+        guard let pending = blockedSwitch else { return }
+        blockedSwitch = nil
+        persistence.discardUnsavedEdits()
+        openUnguarded(pending.url)
+    }
+
+    func cancelBlockedSwitch() { blockedSwitch = nil }
+
+    private func openUnguarded(_ url: URL) {
         if coordinator.hasImage, coordinator.sourceURL != url { previousStack = stack }
         openRevision += 1
         let existing = (try? Sidecar.load(forImageAt: url)) ?? nil
         var loaded = existing ?? EditStack.freshOpenDefault(for: url)
         loaded.fingerprint = (try? SourceFingerprint.compute(for: url)) ?? ""
         stack = loaded
+        persistence.adopt(stackFor: url)
         history = EditHistory(loaded)
 
         coordinator.open(url, canvasLongEdge: canvasLongEdge)
@@ -285,8 +312,11 @@ final class EditorModel: ObservableObject {
     }
 
     private func persist() {
-        guard let url = coordinator.sourceURL else { return }
-        try? Sidecar.save(stack, forImageAt: url)
+        if !persistence.save(stack, currentSource: coordinator.sourceURL),
+           persistence.isDirty, let message = persistence.failure {
+            NSLog("XTransDarkroom: %@", message)
+            statusLine = message
+        }
     }
 
     func canvasResized(to longEdge: Int) {

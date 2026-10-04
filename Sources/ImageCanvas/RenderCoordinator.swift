@@ -129,7 +129,9 @@ public final class RenderCoordinator: ObservableObject {
             rebuildProxy(canvasLongEdge: canvasLongEdge)
         } catch {
             lastError = String(describing: error)
+            sourceURL = nil
             fullFrame = nil
+            beforeFrame = nil
             hasLensCorrection = false
             metadata = CaptureMetadata()
             asShotSettings = nil

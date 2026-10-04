@@ -38,6 +38,7 @@ struct InspectorView: View {
                             }
                         }
                     }
+                    .disabled(!coordinator.hasImage)
                     .onChange(of: expansion.geometry, initial: true) {
                         if expansion.geometry { withAnimation { proxy.scrollTo(InspectorTool.geometry, anchor: .top) } }
                     }

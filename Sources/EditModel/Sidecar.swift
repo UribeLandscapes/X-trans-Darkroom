@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import RawDecode
 
 /// Build plan §2: the sidecar is the source of truth; the catalog database is a
 /// rebuildable index over it. Plain JSON rather than Core Data so the edit history
@@ -9,13 +10,48 @@ public enum Sidecar {
 
     public static let fileExtension = "xtd.json"
 
+    /// The sidecar name keeps the full image filename (DSCF0001.RAF.xtd.json), so a RAW and
+    /// its JPEG sibling never share one file and overwrite each other's edits.
     public static func url(forImageAt imageURL: URL) -> URL {
+        imageURL.appendingPathExtension(fileExtension)
+    }
+
+    /// Pre-fix name (DSCF0001.xtd.json), shared by every file with the same stem.
+    static func legacyURL(forImageAt imageURL: URL) -> URL {
         imageURL.deletingPathExtension().appendingPathExtension(fileExtension)
     }
 
+    /// Legacy migration rule. A legacy sidecar is read (never moved or deleted, so no
+    /// sibling can lose edits) only when ownership is unambiguous:
+    ///  - the image is the only supported file in its folder with that stem, or
+    ///  - several share the stem and this image is the single RAW among them.
+    /// Anything else (e.g. JPG+PNG, two RAWs, the JPG of a RAW+JPG pair) adopts nothing.
+    /// A new-style sidecar, once saved, always takes precedence.
+    public static func ownsLegacySidecar(
+        _ imageURL: URL,
+        listing: (URL) throws -> [String] = { try FileManager.default.contentsOfDirectory(atPath: $0.path) }
+    ) -> Bool {
+        let dir = imageURL.deletingLastPathComponent()
+        let stem = imageURL.deletingPathExtension().lastPathComponent.lowercased()
+        // Unlistable folder: ownership cannot be confirmed, so adopt nothing.
+        guard let names = try? listing(dir) else { return false }
+        let siblings = names.map { dir.appendingPathComponent($0) }.filter {
+            SupportedFormats.contains($0) && $0.deletingPathExtension().lastPathComponent.lowercased() == stem
+        }
+        // The confirmed set must contain this image itself.
+        guard siblings.contains(where: { $0.lastPathComponent == imageURL.lastPathComponent }) else { return false }
+        guard siblings.count > 1 else { return true }
+        let raws = siblings.filter { SupportedFormats.isRaw($0.pathExtension) }
+        return raws.count == 1 && raws[0].lastPathComponent == imageURL.lastPathComponent
+    }
+
     public static func load(forImageAt imageURL: URL) throws -> EditStack? {
-        let side = url(forImageAt: imageURL)
-        guard FileManager.default.fileExists(atPath: side.path) else { return nil }
+        var side = url(forImageAt: imageURL)
+        if !FileManager.default.fileExists(atPath: side.path) {
+            let legacy = legacyURL(forImageAt: imageURL)
+            guard FileManager.default.fileExists(atPath: legacy.path), ownsLegacySidecar(imageURL) else { return nil }
+            side = legacy
+        }
         let data = try Data(contentsOf: side)
         return try JSONDecoder().decode(EditStack.self, from: data)
     }

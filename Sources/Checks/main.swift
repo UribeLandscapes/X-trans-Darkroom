@@ -4,6 +4,7 @@ import EditModel
 
 let c = Checks()
 await MultiCameraChecks.run(c)
+await DataLossChecks.run(c)
 
 // ─────────────────────────────────────────────────────────────────────────────
 c.suite("EditStack serialization (Build plan §2)") { c in
@@ -76,8 +77,8 @@ c.suite("Sidecar persistence (Build plan §2, §7)") { c in
     try Sidecar.save(stack, forImageAt: image)
 
     c.expect(FileManager.default.fileExists(
-        atPath: dir.appendingPathComponent("DSCF1234.xtd.json").path),
-        "sidecar is written beside the image as <name>.xtd.json")
+        atPath: dir.appendingPathComponent("DSCF1234.RAF.xtd.json").path),
+        "sidecar is written beside the image as <filename>.xtd.json")
 
     let loaded = try Sidecar.load(forImageAt: image)
     c.expect(loaded?.light.exposure == 0.66, "sidecar reloads the committed value")

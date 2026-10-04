@@ -70,7 +70,7 @@ public actor ExportEngine {
         let ext = options.format == .jpeg ? "jpg" : "tif"
         let desired = request.destination.appendingPathComponent(base).appendingPathExtension(ext)
         if options.collision == .skip && FileManager.default.fileExists(atPath: desired.path) { return nil }
-        if options.collision == .overwrite && desired.resolvingSymlinksInPath() == item.source.resolvingSymlinksInPath() {
+        if options.collision == .overwrite && Self.isProtectedOriginal(desired, batchSources: request.items.map(\.source)) {
             throw ExportError.sourceWouldBeOverwritten
         }
         let frame = try CoreImageRawDecoder(builtInLensCorrection: item.stack.optics.builtInLensCorrection).decode(item.source, scale: .full)
@@ -124,6 +124,18 @@ public actor ExportEngine {
             suffix += 1
             output = request.destination.appendingPathComponent("\(base)_\(suffix)").appendingPathExtension(ext)
         }
+    }
+
+    /// Overwrite must never destroy an original: any source of the batch, or an existing
+    /// importable photo sitting in a folder the batch reads from (exporting photo.raf to
+    /// photo.jpg beside it). Exports into other folders may replace earlier outputs.
+    public static func isProtectedOriginal(_ destination: URL, batchSources: [URL]) -> Bool {
+        let target = destination.resolvingSymlinksInPath()
+        let sources = batchSources.map { $0.resolvingSymlinksInPath() }
+        if sources.contains(target) { return true }
+        guard SupportedFormats.contains(target), FileManager.default.fileExists(atPath: target.path) else { return false }
+        let folder = target.deletingLastPathComponent().path
+        return sources.contains { $0.deletingLastPathComponent().path == folder }
     }
 
     public static func finish(_ rendered: CIImage, options: ExportOptions) throws -> CIImage {
