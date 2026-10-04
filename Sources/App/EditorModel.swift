@@ -203,14 +203,40 @@ final class EditorModel: ObservableObject {
 
     func cancelBlockedSwitch() { blockedSwitch = nil }
 
+    /// The photo's saved edits file exists but could not be read. It stays untouched
+    /// until the user picks "Reset Edits and Overwrite".
+    struct UnreadableSidecar: Equatable { let url: URL; let message: String }
+    @Published var unreadableSidecar: UnreadableSidecar?
+
+    /// Default choice: leave the file alone; edits this session are not saved.
+    func keepUnreadableSidecar() { unreadableSidecar = nil }
+
+    func resetAndOverwriteSidecar() {
+        guard let pending = unreadableSidecar else { return }
+        unreadableSidecar = nil
+        guard coordinator.sourceURL?.standardizedFileURL == pending.url.standardizedFileURL else { return }
+        persistence.overrideLoadFailure()
+        let saved = persist()
+        statusLine = SidecarPersistence.resetOverwriteStatus(
+            saved: saved, failure: persistence.failure, fileName: pending.url.lastPathComponent)
+    }
+
     private func openUnguarded(_ url: URL) {
         if coordinator.hasImage, coordinator.sourceURL != url { previousStack = stack }
         openRevision += 1
-        let existing = (try? Sidecar.load(forImageAt: url)) ?? nil
+        unreadableSidecar = nil
+        let outcome = Sidecar.loadOutcome(forImageAt: url)
+        var existing: EditStack?
+        var loadFailure: String?
+        switch outcome {
+        case .loaded(let saved): existing = saved
+        case .failed(let detail): loadFailure = detail
+        case .missing: break
+        }
         var loaded = existing ?? EditStack.freshOpenDefault(for: url)
         loaded.fingerprint = (try? SourceFingerprint.compute(for: url)) ?? ""
         stack = loaded
-        persistence.adopt(stackFor: url)
+        persistence.adopt(stackFor: url, loadFailure: loadFailure)
         history = EditHistory(loaded)
 
         coordinator.open(url, canvasLongEdge: canvasLongEdge)
@@ -240,7 +266,12 @@ final class EditorModel: ObservableObject {
         coordinator.renderInteractive(stack)
         coordinator.scheduleSettle(stack)
 
-        if let error = coordinator.lastError {
+        if let detail = loadFailure {
+            NSLog("XTransDarkroom: could not read edits for %@: %@", url.path, detail)
+            let message = "Couldn't read saved edits for \(url.lastPathComponent). Your edits file was left untouched; changes won't be saved."
+            statusLine = message
+            unreadableSidecar = UnreadableSidecar(url: url, message: message)
+        } else if let error = coordinator.lastError {
             statusLine = error
         } else if let fallback = coordinator.metadata.fallbackStatus {
             statusLine = fallback
@@ -311,12 +342,14 @@ final class EditorModel: ObservableObject {
         coordinator.renderInteractive(stack)
     }
 
-    private func persist() {
-        if !persistence.save(stack, currentSource: coordinator.sourceURL),
-           persistence.isDirty, let message = persistence.failure {
+    @discardableResult
+    private func persist() -> Bool {
+        let saved = persistence.save(stack, currentSource: coordinator.sourceURL)
+        if !saved, persistence.isDirty, let message = persistence.failure {
             NSLog("XTransDarkroom: %@", message)
             statusLine = message
         }
+        return saved
     }
 
     func canvasResized(to longEdge: Int) {

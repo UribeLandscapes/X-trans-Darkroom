@@ -17,6 +17,7 @@ enum DataLossChecks {
         await failedOpen(c)
         persistence(c)
         switchGuard(c)
+        loadFailureLock(c)
     }
 
     private static func writeImage(_ url: URL, type: UTType, seed: UInt8) throws {
@@ -219,6 +220,90 @@ enum DataLossChecks {
             c.expect(!discarded.isDirty && discarded.failure == nil, "explicit discard clears dirty and the message")
             c.expect(discarded.prepareSwitch(stack, currentSource: a, write: { _, _ in throw Boom() }) == .proceed,
                      "after discard the switch proceeds")
+        }
+    }
+
+    private static func loadFailureLock(_ c: Checks) {
+        c.suite("Unreadable sidecar is never overwritten (audit HIGH)") { c in
+            let a = URL(fileURLWithPath: "/tmp/a.RAF"), b = URL(fileURLWithPath: "/tmp/b.RAF")
+            var stack = EditStack(); stack.light.exposure = 1
+            var written: [URL] = []
+
+            var p = SidecarPersistence()
+            p.adopt(stackFor: a, loadFailure: "bad json")
+            c.expect(!p.save(stack, currentSource: a, write: { _, u in written.append(u) }) && written.isEmpty,
+                     "locked persistence returns false and never calls write")
+            c.expect(!p.isDirty && p.failure == nil, "locked save does not mark dirty or report a save failure")
+            c.expect(p.prepareSwitch(stack, currentSource: a, write: { _, u in written.append(u) }) == .proceed && written.isEmpty,
+                     "locked persistence never blocks a photo switch")
+            c.expect(p.loadFailure == "bad json", "lock keeps the load-failure message")
+
+            p.overrideLoadFailure()
+            c.expect(p.loadFailure == nil, "override clears the lock")
+            c.expect(p.save(stack, currentSource: a, write: { _, u in written.append(u) }) && written == [a],
+                     "after override the next save writes")
+
+            var q = SidecarPersistence()
+            q.adopt(stackFor: a, loadFailure: "bad json")
+            q.adopt(stackFor: b)
+            c.expect(q.loadFailure == nil && q.save(stack, currentSource: b, write: { _, _ in }),
+                     "adopting another photo clears the lock")
+
+            // Real files: the flow EditorModel uses (load outcome, adopt, save).
+            let dir = try Checks.tempDir()
+            defer { try? FileManager.default.removeItem(at: dir) }
+            let raf = dir.appendingPathComponent("DSCF0001.RAF")
+            try Data("raw".utf8).write(to: raf)
+            func flow(_ image: URL) -> (SidecarPersistence, Sidecar.LoadOutcome) {
+                let outcome = Sidecar.loadOutcome(forImageAt: image)
+                var persistence = SidecarPersistence()
+                if case .failed(let message) = outcome { persistence.adopt(stackFor: image, loadFailure: message) }
+                else { persistence.adopt(stackFor: image) }
+                return (persistence, outcome)
+            }
+
+            let corrupt = Data("{ not json".utf8)
+            let side = Sidecar.url(forImageAt: raf)
+            try corrupt.write(to: side)
+            var (locked, outcome) = flow(raf)
+            var failed = false
+            if case .failed = outcome { failed = true }
+            c.expect(failed, "corrupt sidecar reports .failed, not .missing")
+            c.expect(!locked.save(stack, currentSource: raf), "save refuses while the corrupt sidecar is locked")
+            c.expect(try Data(contentsOf: side) == corrupt, "corrupt sidecar bytes are unchanged after save attempt")
+
+            // Legacy sidecar (DSCF0001.xtd.json), owned by the lone RAW, corrupt.
+            try FileManager.default.removeItem(at: side)
+            let legacy = raf.deletingPathExtension().appendingPathExtension(Sidecar.fileExtension)
+            try corrupt.write(to: legacy)
+            (locked, outcome) = flow(raf)
+            failed = false
+            if case .failed = outcome { failed = true }
+            c.expect(failed, "corrupt owned legacy sidecar reports .failed")
+            c.expect(!locked.save(stack, currentSource: raf), "save refuses for a locked legacy sidecar")
+            c.expect(try Data(contentsOf: legacy) == corrupt && !FileManager.default.fileExists(atPath: side.path),
+                     "legacy file unchanged and no new-style sidecar created")
+
+            // Missing sidecar: unchanged behaviour.
+            try FileManager.default.removeItem(at: legacy)
+            var (fresh, missing) = flow(raf)
+            c.expect(missing == .missing, "no sidecar reports .missing")
+            c.expect(fresh.save(stack, currentSource: raf) && FileManager.default.fileExists(atPath: side.path),
+                     "missing sidecar still saves normally")
+
+            let ok = SidecarPersistence.resetOverwriteStatus(saved: true, failure: nil, fileName: "a.RAF")
+            c.expect(ok.contains("Replaced") && ok.contains("a.RAF"), "reset status reports success when the write happened")
+            let bad = SidecarPersistence.resetOverwriteStatus(saved: false, failure: "Could not save edits for a.RAF: disk full", fileName: "a.RAF")
+            c.expect(bad == "Could not save edits for a.RAF: disk full", "reset status shows the save failure instead of claiming success")
+            c.expect(!SidecarPersistence.resetOverwriteStatus(saved: false, failure: nil, fileName: "a.RAF").contains("Replaced"),
+                     "reset status never claims success without a write")
+
+            // Explicit override replaces the corrupt file.
+            try corrupt.write(to: side)
+            (locked, _) = flow(raf)
+            locked.overrideLoadFailure()
+            c.expect(locked.save(stack, currentSource: raf), "override then save writes")
+            c.expect(Sidecar.loadOutcome(forImageAt: raf) == .loaded(stack), "overwritten sidecar loads cleanly")
         }
     }
 }

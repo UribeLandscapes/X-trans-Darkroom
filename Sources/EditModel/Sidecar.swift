@@ -56,6 +56,24 @@ public enum Sidecar {
         return try JSONDecoder().decode(EditStack.self, from: data)
     }
 
+    /// Outcome of reading a photo's sidecar, keeping "no file" apart from "file unreadable".
+    public enum LoadOutcome: Equatable {
+        case missing
+        case loaded(EditStack)
+        case failed(String)
+    }
+
+    /// Like `load`, but a corrupt, unreadable or mismatched sidecar is reported as `.failed`
+    /// instead of being collapsed into "missing", so callers can refuse to overwrite it.
+    public static func loadOutcome(forImageAt imageURL: URL) -> LoadOutcome {
+        do {
+            guard let stack = try load(forImageAt: imageURL) else { return .missing }
+            return .loaded(stack)
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+
     /// Atomic write. A half-written sidecar would silently lose a session of edits.
     public static func save(_ stack: EditStack, forImageAt imageURL: URL) throws {
         let encoder = JSONEncoder()

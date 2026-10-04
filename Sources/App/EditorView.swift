@@ -96,6 +96,12 @@ struct EditorView: View {
             Button("Discard Edits", role: .destructive) { editor.discardEditsAndOpenBlocked() }
             Button("Cancel", role: .cancel) { editor.cancelBlockedSwitch() }
         } message: { Text(editor.blockedSwitch?.message ?? "") }
+        .alert("Couldn't read saved edits", isPresented: Binding(
+            get: { editor.unreadableSidecar != nil },
+            set: { if !$0 { editor.keepUnreadableSidecar() } })) {
+            Button("Keep File Untouched", role: .cancel) { editor.keepUnreadableSidecar() }
+            Button("Reset Edits and Overwrite", role: .destructive) { editor.resetAndOverwriteSidecar() }
+        } message: { Text(editor.unreadableSidecar?.message ?? "") }
         .sheet(item: $exportRequest) { request in ExportSheet(request: request) }
         .onChange(of: editor.openRevision) { libraryMode = false }
         .onChange(of: editor.cameraPanelRevision) { expansion.camera = true }
