@@ -86,6 +86,10 @@ public final class RenderCoordinator: ObservableObject {
         return result
     }
     @Published public private(set) var histogram: Histogram = .empty
+    /// Pixel size of the image the histogram was last computed from (always the whole-image proxy).
+    public private(set) var histogramSourceSize: CGSize = .zero
+    private var lastZoomedHistogram: CFAbsoluteTime = 0
+    private static let zoomedHistogramInterval: CFAbsoluteTime = 0.1
     @Published public private(set) var asShotSettings: AsShotSettings?
     @Published public private(set) var metadata = CaptureMetadata()
     @Published public private(set) var hasLensCorrection = false
@@ -94,6 +98,10 @@ public final class RenderCoordinator: ObservableObject {
     @Published public private(set) var lastError: String?
 
     private var settleTask: Task<Void, Never>?
+    /// Bumped by every interactive render; a settle only publishes if no newer edit began.
+    private var renderGeneration = 0
+    /// Stack the pending settle was scheduled for; an interactive render of the same stack keeps it.
+    private var settleStack: EditStack?
     var settleContext: CIContext
 
     public init(decoder: any RawDecoder = CoreImageRawDecoder()) {
@@ -111,6 +119,8 @@ public final class RenderCoordinator: ObservableObject {
 
     public func open(_ url: URL, canvasLongEdge: Int) {
         settleTask?.cancel()
+        settleStack = nil
+        renderGeneration += 1
         beforeFrame = nil; decodedLensCorrection = true
         wbPicking = false
         beforeProxy = nil; beforeFull = nil; beforeImage = nil
@@ -180,6 +190,13 @@ public final class RenderCoordinator: ObservableObject {
 
     /// Called at most once per display refresh while a control is being dragged.
     public func renderInteractive(_ stack: EditStack) {
+        // A new edit invalidates any pending or in-flight settle for a different stack.
+        // The same stack keeps its settle, so commit-then-render callers still settle.
+        if settleStack != stack {
+            renderGeneration += 1
+            settleTask?.cancel()
+            settleStack = nil
+        }
         updateDecode(stack)
         guard let proxy = proxyImage, let frame = fullFrame else { return }
         let start = CFAbsoluteTimeGetCurrent()
@@ -193,9 +210,27 @@ public final class RenderCoordinator: ObservableObject {
         beforeImage = renderBefore(full: usesFullFrame)
         FrameStats.shared.record(.interactive, seconds: CFAbsoluteTimeGetCurrent() - start)
 
-        // Keep the last whole-image proxy histogram while zoomed. A visible crop would
-        // misrepresent exposure, and a second render per gesture would waste work.
-        if !usesFullFrame, let h = histogramComputer.compute(rendered) { histogram = h }
+        updateHistogram(stack, proxyRender: usesFullFrame ? nil : rendered, throttled: true)
+    }
+
+    /// The histogram always describes the WHOLE image, never the zoomed viewport: it reads
+    /// the proxy-sized render. Zoomed, that is one extra small GPU graph, throttled during
+    /// drags; the settle path refreshes it unthrottled so the final value is exact.
+    private func updateHistogram(_ stack: EditStack, proxyRender: CIImage?, throttled: Bool) {
+        var source = proxyRender
+        if source == nil {
+            let now = CFAbsoluteTimeGetCurrent()
+            if throttled, now - lastZoomedHistogram < Self.zoomedHistogramInterval { return }
+            guard let proxy = proxyImage, let frame = fullFrame else { return }
+            lastZoomedHistogram = now
+            let input = DecodedFrameInput(image: proxy, asShotTemperature: frame.metadata.asShotTemperature,
+                                          lensCorrection: frame.lensCorrection,
+                                          profile: profileLibrary.resolve(identifier: stack.profileID, cameraModel: frame.metadata.cameraModel))
+            source = pipeline.render(input, stack: previewStack(stack), proxyRatio: proxyRatio)
+        }
+        guard let image = source, let h = histogramComputer.compute(image) else { return }
+        histogram = h
+        histogramSourceSize = image.extent.size
     }
 
     // MARK: Settle path
@@ -203,14 +238,17 @@ public final class RenderCoordinator: ObservableObject {
     /// Called on interaction end. Supersedes any in-flight settle render.
     public func scheduleSettle(_ stack: EditStack) {
         settleTask?.cancel()
+        settleStack = stack
+        let generation = renderGeneration
         settleTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(Self.settleDelay))
             guard !Task.isCancelled else { return }
-            await self?.renderSettle(stack)
+            await self?.renderSettle(stack, generation: generation)
         }
     }
 
-    private func renderSettle(_ stack: EditStack) async {
+    private func renderSettle(_ stack: EditStack, generation: Int) async {
+        guard generation == renderGeneration else { return }
         updateDecode(stack)
         guard let frame = fullFrame else { return }
         isSettling = true
@@ -222,12 +260,13 @@ public final class RenderCoordinator: ObservableObject {
                                       profile: profileLibrary.resolve(identifier: stack.profileID, cameraModel: frame.metadata.cameraModel))
         let start = CFAbsoluteTimeGetCurrent()
         let rendered = pipeline.render(input, stack: previewStack(stack), proxyRatio: 1.0)
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled, generation == renderGeneration else { return }
         displayPixelSize = rendered.extent.size
         displayImage = rendered
         // These lazy graphs are cached per source/stack/resolution. Resize invalidates
         // only the proxy; the full-resolution before graph settles just once.
         beforeImage = renderBefore(full: true)
+        updateHistogram(stack, proxyRender: nil, throttled: false)
         FrameStats.shared.record(.settle, seconds: CFAbsoluteTimeGetCurrent() - start)
     }
 

@@ -36,7 +36,18 @@ public struct ExportResult: Sendable {
 public actor ExportEngine {
     private let pipeline = RenderPipeline()
     private let context = CIContext(options: [.workingColorSpace: WorkingColorSpace.linearWide, .cacheIntermediates: false])
-    public init() {}
+    /// Hard-link primitive (source, destination) -> 0, or -1 with errno set. Injectable so
+    /// checks can simulate volumes without hard links (exFAT, some network shares).
+    public typealias LinkOperation = @Sendable (String, String) -> Int32
+    private let linkOperation: LinkOperation
+    /// Runs after the fallback copy wrote its bytes, before fsync, with the destination path.
+    /// Throwing simulates a copy failure; checks use it to race another writer.
+    public typealias AfterCopy = @Sendable (String) throws -> Void
+    private let afterCopy: AfterCopy
+    public init(link: @escaping LinkOperation = { Darwin.link($0, $1) }, afterCopy: @escaping AfterCopy = { _ in }) {
+        linkOperation = link
+        self.afterCopy = afterCopy
+    }
 
     public func run(_ request: ExportRequest, cancellation: ExportCancellation = ExportCancellation(),
                     progress: @Sendable (ExportProgress) async -> Void = { _ in }) async -> [ExportResult] {
@@ -118,11 +129,62 @@ public actor ExportEngine {
                 return output
             }
             // link is exclusive, so another writer cannot steal a checked-free filename.
-            if link(temporary.path, output.path) == 0 { return output }
-            guard errno == EEXIST else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+            // Volumes without hard links (exFAT) fall back to an O_EXCL create-and-copy,
+            // which is equally exclusive.
+            if try publishExclusively(temporary, as: output) { return output }
             if options.collision == .skip { return nil }
             suffix += 1
             output = request.destination.appendingPathComponent("\(base)_\(suffix)").appendingPathExtension(ext)
+        }
+    }
+
+    /// Errors meaning "this volume cannot hard link", as opposed to a real failure.
+    static let linkUnsupportedErrors: Set<Int32> = [ENOTSUP, EPERM, EXDEV, ENOSYS, EMLINK]
+
+    /// Publishes without ever replacing an existing file. Returns false when the name is
+    /// already taken. Hard link first; if the volume cannot link, create the destination
+    /// with O_CREAT|O_EXCL (fails with EEXIST rather than truncating) and copy the bytes.
+    private func publishExclusively(_ temporary: URL, as output: URL) throws -> Bool {
+        if linkOperation(temporary.path, output.path) == 0 { return true }
+        let linkError = errno
+        if linkError == EEXIST { return false }
+        guard Self.linkUnsupportedErrors.contains(linkError) else {
+            throw POSIXError(POSIXErrorCode(rawValue: linkError) ?? .EIO)
+        }
+        return try Self.copyExclusively(temporary, to: output, afterCopy: afterCopy)
+    }
+
+    /// Never deletes on failure: without an atomic "remove only if mine" on exFAT, any unlink
+    /// could destroy another writer's file. The partial file is reported instead.
+    private static func copyExclusively(_ source: URL, to destination: URL, afterCopy: AfterCopy) throws -> Bool {
+        let out = open(destination.path, O_WRONLY | O_CREAT | O_EXCL, 0o644)
+        if out < 0 {
+            if errno == EEXIST { return false }
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        defer { close(out) }
+        do {
+            try copyBytes(from: source, to: out)
+            try afterCopy(destination.path)
+            guard fsync(out) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        } catch {
+            throw PartialExportError(path: destination.path, underlying: String(describing: error))
+        }
+        return true
+    }
+
+    private static func copyBytes(from source: URL, to out: Int32) throws {
+        let input = try FileHandle(forReadingFrom: source)
+        defer { try? input.close() }
+        while let chunk = try input.read(upToCount: 1 << 20), !chunk.isEmpty {
+            try chunk.withUnsafeBytes { buffer in
+                var offset = 0
+                while offset < buffer.count {
+                    let written = write(out, buffer.baseAddress! + offset, buffer.count - offset)
+                    guard written >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+                    offset += written
+                }
+            }
         }
     }
 

@@ -107,14 +107,6 @@ The SDK is pinned to 26.5 because the macOS 27 SDK that ships with the Command L
 
 Version 0.1.0. Local adjustment masks (gradients, brush, color range) are in progress and will come in a later release.
 
-## Known issues
-
-These are planned for 0.1.1:
-
-- Negative Highlights values have no effect. Only the positive half of the slider changes the image.
-- Whites and Blacks clip the image instead of remapping its tones, so strong settings flatten detail near the ends of the range.
-- Export with "Add index" or "Skip" collision handling needs hard links, so it fails on drives formatted as exFAT. Export to an APFS or HFS+ drive instead.
-
 ## License
 
 MIT. See [LICENSE](LICENSE).

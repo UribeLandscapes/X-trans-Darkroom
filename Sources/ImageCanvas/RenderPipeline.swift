@@ -137,29 +137,21 @@ public struct RenderPipeline: Sendable {
             out = (f.outputImage ?? out).cropped(to: image.extent)
         }
 
-        // Highlights and shadows recovered before global contrast, so contrast operates on
-        // an already-tamed tonal range - the ordering Lightroom's Basic panel implies.
-        if light.highlights != 0 || light.shadows != 0 {
+        // Shadows recovered before global contrast, so contrast operates on an already-tamed
+        // tonal range - the ordering Lightroom's Basic panel implies. CIHighlightShadowAdjust
+        // only handles shadows here; its highlight control can only darken, so Highlights
+        // lives in applyTone where both directions are available.
+        if light.shadows != 0 {
             let f = CIFilter.highlightShadowAdjust()
             f.inputImage = out
-            // CI takes highlight 0...1 where 1 is neutral; our slider is -100...+100.
-            f.highlightAmount = Float(1.0 - max(0, light.highlights) / 100.0 * 0.9
-                                          + max(0, -light.highlights) / 100.0 * 0.0)
+            f.highlightAmount = 1 // CI: 1 is neutral
             f.shadowAmount = Float(light.shadows / 100.0)
             f.radius = 0 // 0 = global, not a local/masked operation (V1 is global only)
             out = (f.outputImage ?? out).cropped(to: image.extent)
         }
 
-        // Whites and blacks are endpoint moves, expressed as a linear remap of the range.
-        if light.whites != 0 || light.blacks != 0 {
-            let white = 1.0 - light.whites / 400.0
-            let black = -light.blacks / 400.0
-            let f = CIFilter.colorClamp()
-            f.inputImage = out
-            f.minComponents = CIVector(x: CGFloat(black), y: CGFloat(black), z: CGFloat(black), w: 0)
-            f.maxComponents = CIVector(x: CGFloat(white), y: CGFloat(white), z: CGFloat(white), w: 1)
-            out = (f.outputImage ?? out).cropped(to: image.extent)
-        }
+        // Highlights, whites and blacks: smooth luminance-weighted remaps, never a clamp.
+        out = applyTone(out, highlights: light.highlights, whites: light.whites, blacks: light.blacks)
 
         if light.contrast != 0 {
             // CIColorControls pivots contrast around 0.5 in the working space. In linear

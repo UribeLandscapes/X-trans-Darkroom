@@ -116,4 +116,14 @@ public final class ExportSettings {
     }
 }
 
+/// A copy onto a volume without hard links failed midway. The partial file is left in place
+/// (deleting could remove another writer's file), so the user is told where it is.
+public struct PartialExportError: Error, CustomStringConvertible {
+    public let path: String
+    public let underlying: String
+    public var description: String {
+        "Export failed: a partial file was left at \(path). Delete it before exporting again. (\(underlying))"
+    }
+}
+
 public enum ExportError: Error { case missingDestination, invalidFilename, invalidDimensions, encodingFailed, sourceWouldBeOverwritten }

@@ -5,6 +5,7 @@ import EditModel
 let c = Checks()
 await MultiCameraChecks.run(c)
 await DataLossChecks.run(c)
+await CoordinatorChecks.run(c)
 
 // ─────────────────────────────────────────────────────────────────────────────
 c.suite("EditStack serialization (Build plan §2)") { c in
@@ -149,6 +150,7 @@ c.suite("Canvas / chrome isolation (Build plan §9)") { c in
 
 RenderChecks.run(c)
 GlowChecks.run(c)
+LightToneChecks.run(c)
 
 await CatalogChecks.run(c)
 
@@ -164,6 +166,7 @@ await RecipeImportChecks.run(c)
 await RecipeUIWiringChecks.run(c)
 
 await ExportChecks.run(c)
+await ExportLinkChecks.run(c)
 
 AsShotCameraChecks.run(c)
 

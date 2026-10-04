@@ -97,8 +97,8 @@ final class EditorModel: ObservableObject {
             context: recipeContext, cameraModel: coordinator.metadata.cameraModel, recipeID: recipeID,
             allowUnresolvedSimulation: true)
         cameraMessage = nil
-        commit()
         live()
+        commit()
     }
 
     func changeCamera(_ field: RecipeField, to value: String) {
@@ -338,8 +338,8 @@ final class EditorModel: ObservableObject {
             } catch { cameraMessage = cameraError(error); return }
         }
         stack = fresh
+        live()
         commit()
-        coordinator.renderInteractive(stack)
     }
 
     @discardableResult
