@@ -5,6 +5,7 @@ import ImagingCore
 import StudioTheme
 import LibraryLogic
 import Export
+import RecipeUI
 import ShortcutLogic
 import AppKit
 
@@ -25,6 +26,8 @@ struct EditorView: View {
     @StateObject var library = LibraryModel()
     @State private var blipBusy = false
     @State private var exportRequest: ExportRequest?
+    @State private var exportPreparation: Task<Void, Never>?
+    @State private var exportPreparationToken = UUID()
     var libraryMode: Bool {
         get { editor.libraryMode }
         nonmutating set { editor.libraryMode = newValue }
@@ -90,6 +93,7 @@ struct EditorView: View {
         .sheet(isPresented: $showsShortcuts) { ShortcutSheet(library: libraryMode, isFujifilmRAF: editor.canUseCamera) }
         .onAppear { editor.library = library }
         .onChange(of: library.selectedPaths, initial: true) { editor.selectedLibraryPaths = library.selectedPaths }
+        .onChange(of: libraryMode) { cancelExportPreparation() }
         .alert("Couldn't save edits", isPresented: Binding(
             get: { editor.blockedSwitch != nil },
             set: { if !$0 { editor.cancelBlockedSwitch() } })) {
@@ -145,22 +149,55 @@ struct EditorView: View {
         }
     }
 
+    /// Cancels any export preparation and invalidates its token so its results are ignored.
+    private func cancelExportPreparation() {
+        guard let running = exportPreparation else { return }
+        running.cancel()
+        exportPreparation = nil
+        exportPreparationToken = UUID()
+        editor.statusLine = ""
+    }
+
     func presentExport() {
-        do {
-            let items: [ExportItem]
-            if libraryMode {
-                items = try library.rows.filter { library.selectedPaths.contains($0.path) }.map { row in
-                    let url = URL(fileURLWithPath: row.path)
-                    let saved = try Sidecar.load(forImageAt: url)
-                    var stack = saved ?? EditStack.freshOpenDefault(for: url)
-                    if coordinator.sourceURL == url { stack = editor.stack }
-                    return ExportItem(source: url, stack: stack, access: library.access(for: row.path))
+        exportPreparation?.cancel()
+        exportPreparation = nil
+        guard libraryMode else {
+            guard let url = coordinator.sourceURL else { return }
+            present([ExportItem(source: url, stack: editor.stack, access: developAccess)])
+            return
+        }
+        let rows = library.rows.filter { library.selectedPaths.contains($0.path) }
+        let urls = rows.map { URL(fileURLWithPath: $0.path) }
+        let accesses = rows.map { library.access(for: $0.path) }
+        let current = coordinator.sourceURL.map { (url: $0, stack: editor.stack) }
+        let profiles = coordinator.profileLibrary
+        editor.statusLine = "Preparing export..."
+        // Sidecar reads and as-shot decodes run off the main actor; the sheet appears after.
+        let token = UUID()
+        exportPreparationToken = token
+        exportPreparation = Task {
+            do {
+                let work = Task.detached {
+                    try LibraryExportStacks.resolve(urls: urls, current: current, profiles: profiles)
                 }
-            } else if let url = coordinator.sourceURL {
-                items = [ExportItem(source: url, stack: editor.stack, access: developAccess)]
-            } else { return }
-            exportRequest = try ExportRequest(items: items, settings: ExportSettings())
-        } catch { editor.statusLine = "Export: \(error)" }
+                // Detached work does not inherit cancellation, so forward it explicitly.
+                let stacks = try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
+                try Task.checkCancellation()
+                guard exportPreparationToken == token else { return }
+                editor.statusLine = ""
+                present(zip(zip(urls, stacks), accesses).map { ExportItem(source: $0.0, stack: $0.1, access: $1) })
+            } catch is CancellationError {
+                // Only clear our own message; a newer preparation owns the status line now.
+                if exportPreparationToken == token { editor.statusLine = "" }
+            } catch {
+                if exportPreparationToken == token, !Task.isCancelled { editor.statusLine = "Export: \(error)" }
+            }
+        }
+    }
+
+    private func present(_ items: [ExportItem]) {
+        do { exportRequest = try ExportRequest(items: items, settings: ExportSettings()) }
+        catch { editor.statusLine = "Export: \(error)" }
     }
 
     private var statusBar: some View {

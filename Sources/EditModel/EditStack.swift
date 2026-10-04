@@ -235,7 +235,7 @@ public struct GeometryAdjustments: Codable, Equatable, Sendable {
         cropX != 0 || cropY != 0 || cropWidth != 1 || cropHeight != 1
     }
 
-    /// Largest axis-aligned rectangle of the original aspect that fits inside a frame
+    /// Largest centred rectangle of the original aspect that fits inside a frame
     /// rotated by `straightenAngle` — this is what stops a straighten from exposing
     /// transparent wedges at the corners.
     public static func autoCropScale(angleDegrees: Double, aspect: Double) -> Double {
@@ -243,14 +243,8 @@ public struct GeometryAdjustments: Codable, Equatable, Sendable {
         guard a > 1e-9 else { return 1 }
         let w = aspect, h = 1.0
         let cosA = cos(a), sinA = sin(a)
-        // Standard largest-inscribed-rectangle result for a rotated rectangle.
-        let longer = max(w, h), shorter = min(w, h)
-        if shorter <= 2 * sinA * cosA * longer || abs(sinA - cosA) < 1e-9 {
-            let x = 0.5 * shorter
-            return (w > h ? x / sinA : x / cosA) / longer
-        }
-        let cos2A = cosA * cosA - sinA * sinA
-        return (w * cosA - h * sinA) / cos2A / w
+        // Fixed-aspect containment: scale the crop until each corner touches the rotated frame.
+        return min(w / (w * cosA + h * sinA), h / (w * sinA + h * cosA))
     }
 
     private enum CodingKeys: String, CodingKey {

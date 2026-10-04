@@ -30,6 +30,70 @@ private enum CatalogErrorForChecks: Error { case fixture }
 enum CatalogChecks {
     @MainActor
     static func run(_ c: Checks) async {
+        await c.suite("Scanner reconciles deleted and renamed files") { c in
+            let dir = try Checks.tempDir()
+            defer { try? FileManager.default.removeItem(at: dir) }
+            let rootA = dir.appendingPathComponent("a"), rootB = dir.appendingPathComponent("b")
+            for r in [rootA, rootB] { try FileManager.default.createDirectory(at: r, withIntermediateDirectories: true) }
+            for name in ["keep.JPG", "gone.JPG", "old.JPG"] {
+                try Data("fixture \(name)".utf8).write(to: rootA.appendingPathComponent(name))
+            }
+            try Data("other".utf8).write(to: rootB.appendingPathComponent("other.JPG"))
+            let catalog = try Catalog(url: dir.appendingPathComponent("r.sqlite"))
+            let scanner = Scanner(catalog: catalog)
+            _ = try await scanner.scan(root: rootA).result.value
+            _ = try await scanner.scan(root: rootB).result.value
+            func names() async throws -> [String] { try await catalog.fetch().map(\.filename).sorted() }
+            let before = try await names()
+            c.expect(before.count == 4, "fixture indexed; rows=\(before.count)/4")
+
+            // Failed scan: a missing root must not remove anything.
+            let missing = dir.appendingPathComponent("missing")
+            var stale = ImageRecord(path: missing.appendingPathComponent("ghost.JPG").path, fingerprint: "x")
+            stale.rating = 1
+            _ = try await catalog.upsert(stale)
+            let failed = try? await scanner.scan(root: missing).result.value
+            let afterFail = try await catalog.fetch(folder: missing.path)
+            c.expect(failed == nil && afterFail.count == 1, "failed scan removes nothing; threw=\(failed == nil), ghost rows=\(afterFail.count)/1")
+            try await catalog.delete(id: afterFail[0].id!)
+
+            // Cancelled scan removes nothing.
+            try FileManager.default.removeItem(at: rootA.appendingPathComponent("gone.JPG"))
+            let cancelled = scanner.scan(root: rootA)
+            cancelled.cancel()
+            _ = try? await cancelled.result.value
+            let afterCancel = try await names()
+            c.expect(afterCancel.contains("gone.JPG"), "cancelled scan removes nothing; rows=\(afterCancel.count)")
+
+            // Rename plus the earlier delete, then a complete scan.
+            try FileManager.default.moveItem(at: rootA.appendingPathComponent("old.JPG"), to: rootA.appendingPathComponent("new.JPG"))
+            let done = try await scanner.scan(root: rootA).result.value
+            let after = try await names()
+            c.expect(!after.contains("gone.JPG"), "deleted file row is removed; rows=\(after)")
+            c.expect(after.contains("new.JPG") && !after.contains("old.JPG"), "renamed file shows only the new name; rows=\(after)")
+            c.expect(after.contains("other.JPG") && after.contains("keep.JPG"), "other root and untouched file rows are kept; rows=\(after)")
+            c.expect(done.removed == 2, "scan reports removed rows; removed=\(done.removed)/2")
+            c.expect(FileManager.default.fileExists(atPath: rootA.appendingPathComponent("new.JPG").path), "image files on disk are untouched")
+        }
+        await c.suite("Catalog prune is cancellable and atomic") { c in
+            let dir = try Checks.tempDir()
+            defer { try? FileManager.default.removeItem(at: dir) }
+            let catalog = try Catalog(url: dir.appendingPathComponent("p.sqlite"))
+            for name in ["a.JPG", "b.JPG"] {
+                _ = try await catalog.upsert(ImageRecord(path: dir.appendingPathComponent(name).path, fingerprint: name))
+            }
+            let task = Task { try await catalog.prune(under: dir.path, keeping: []) }
+            task.cancel()
+            let outcome = await task.result
+            let rows = try await catalog.count()
+            c.expect(rows == 2, "cancelled prune removes no rows; rows=\(rows)/2")
+            if case .failure(let error) = outcome {
+                c.expect(error is CancellationError, "cancelled prune throws CancellationError; got \(error)")
+            } else { c.fail("cancelled prune should throw; it returned normally") }
+            let removed = try await catalog.prune(under: dir.path, keeping: [])
+            let left = try await catalog.count()
+            c.expect(removed == 2 && left == 0, "uncancelled prune still commits; removed=\(removed)/2, rows=\(left)/0")
+        }
         await c.suite("Catalog and thumbnail cache (Build plan section 7)") { c in
             let dir = try Checks.tempDir()
             defer { try? FileManager.default.removeItem(at: dir) }

@@ -95,6 +95,17 @@ enum AsShotCameraChecks {
             c.expect(reset.cameraSettings == shot.values && reset.light.shadows == -36 && reset.geometry == initial.geometry && reset.recipeID.isEmpty,
                      "reset resolves shot and preserves crop: shadows=\(reset.light.shadows)/-36, recipe chars=\(reset.recipeID.count)/0")
             c.expect(panel.values == shot.values, "reset after recipe restores fields=\(panel.values.count)/\(shot.values.count)")
+            // First-open resolution is shared by Develop open and Library export.
+            let firstURL = URL(fileURLWithPath: "/nowhere/shot.RAF")
+            let first = FirstOpenStack.resolve(for: firstURL, asShot: shot, isFujifilmRAF: true,
+                profiles: emptyLibrary, context: context, cameraModel: "FUJIFILM X-T5")
+            c.expect(first.error == nil && first.stack.cameraSettings == shot.values && first.stack.light.shadows == -36
+                     && first.stack.detail.colorNR == 25,
+                     "first open applies as-shot: shadows=\(first.stack.light.shadows)/-36, settings=\(first.stack.cameraSettings?.count ?? 0)/\(shot.values.count)")
+            let plain = FirstOpenStack.resolve(for: URL(fileURLWithPath: "/nowhere/a.jpg"), asShot: nil, isFujifilmRAF: false,
+                profiles: emptyLibrary, context: context, cameraModel: "")
+            c.expect(plain.stack == EditStack.freshOpenDefault(for: URL(fileURLWithPath: "/nowhere/a.jpg")),
+                     "non-Fuji first open equals the fresh default")
             // Optional local verification has no dependency on the user's photo or exiftool.
             let pictures = URL.homeDirectory.appendingPathComponent("Pictures")
             if let folders = try? FileManager.default.contentsOfDirectory(at: pictures, includingPropertiesForKeys: nil),

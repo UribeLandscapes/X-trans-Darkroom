@@ -10,7 +10,7 @@ struct XTransDarkroomApp: App {
     @StateObject private var editor = EditorModel()
 
     var body: some Scene {
-        WindowGroup("X-Trans Darkroom") {
+        Window("X-Trans Darkroom", id: "main") {
             EditorView(editor: editor)
                 .frame(minWidth: 1100, minHeight: 700)
                 .preferredColorScheme(.dark)

@@ -168,6 +168,7 @@ await RecipeUIWiringChecks.run(c)
 
 await ExportChecks.run(c)
 await ExportLinkChecks.run(c)
+await ExportStacksChecks.run(c)
 
 AsShotCameraChecks.run(c)
 

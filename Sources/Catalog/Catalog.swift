@@ -206,6 +206,33 @@ public actor Catalog {
     public func delete(id: Int64) throws {
         try execute("DELETE FROM images WHERE id = ?", [.int64(id)])
     }
+    /// Removes catalog rows inside `root` whose files are neither in `keeping` nor on disk.
+    /// Rows only: never touches files. Call after a complete, successful enumeration.
+    @discardableResult
+    public func prune(under root: String, keeping: Set<String>) throws -> Int {
+        try Task.checkCancellation()
+        let prefix = root.hasSuffix("/") ? root : root + "/"
+        let stale = try fetch().filter { row in
+            row.path.hasPrefix(prefix) && !keeping.contains(row.path)
+                && !FileManager.default.fileExists(atPath: row.path)
+        }
+        try execute("BEGIN IMMEDIATE", [])
+        do {
+            var removed = 0
+            for row in stale {
+                try Task.checkCancellation()
+                guard let id = row.id else { continue }
+                try delete(id: id)
+                removed += 1
+            }
+            try execute("COMMIT", [])
+            return removed
+        } catch {
+            // Cancellation or failure part-way: undo every delete so rows are all-or-nothing.
+            try? execute("ROLLBACK", [])
+            throw error
+        }
+    }
     public func count() throws -> Int {
         try statement("SELECT COUNT(*) FROM images", []) { stmt in
             guard sqlite3_step(stmt) == SQLITE_ROW else { throw failure() }

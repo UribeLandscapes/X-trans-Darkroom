@@ -221,6 +221,13 @@ final class EditorModel: ObservableObject {
             saved: saved, failure: persistence.failure, fileName: pending.url.lastPathComponent)
     }
 
+    /// Resolves first-open treatment for the image currently loaded in the coordinator.
+    private func firstOpenStack(for url: URL) -> FirstOpenStack.Result {
+        FirstOpenStack.resolve(for: url, asShot: canUseCamera ? coordinator.asShotSettings : nil,
+            isFujifilmRAF: canUseCamera, profiles: coordinator.profileLibrary,
+            context: recipeContext, cameraModel: coordinator.metadata.cameraModel)
+    }
+
     private func openUnguarded(_ url: URL) {
         if coordinator.hasImage, coordinator.sourceURL != url { previousStack = stack }
         openRevision += 1
@@ -242,24 +249,17 @@ final class EditorModel: ObservableObject {
         coordinator.open(url, canvasLongEdge: canvasLongEdge)
 
         cameraMessage = nil
+        // One shared first-open rule (as-shot camera/profile), also used by Library export.
+        let firstOpen = firstOpenStack(for: url)
         if canUseCamera, existing == nil, coordinator.asShotSettings != nil {
-            let panel = cameraPanel
-            stack.cameraSettings = panel.values
-            do {
-                stack = try panel.resolved(on: stack, profiles: coordinator.profileLibrary,
-                    context: recipeContext, cameraModel: coordinator.metadata.cameraModel, allowUnresolvedSimulation: true)
-            } catch { cameraMessage = cameraError(error) }
+            var resolved = firstOpen.stack
+            resolved.fingerprint = stack.fingerprint
+            stack = resolved
+            if let error = firstOpen.error { cameraMessage = cameraError(error) }
             history = EditHistory(stack)
         }
-        // Match first-open treatment, including as-shot camera/profile resolution;
-        // saved sidecars and subsequent edits never become the Before baseline.
-        var before = EditStack.freshOpenDefault(for: url)
-        if canUseCamera, let asShot = coordinator.asShotSettings {
-            let panel = CameraPanelState(asShot: asShot, saved: nil)
-            before = (try? panel.resolved(on: before, profiles: coordinator.profileLibrary,
-                context: recipeContext, cameraModel: coordinator.metadata.cameraModel,
-                allowUnresolvedSimulation: true)) ?? before
-        }
+        // Before baseline matches first-open treatment; saved sidecars and later edits never change it.
+        let before = firstOpen.stack
         coordinator.setBeforeStack(before)
         viewer.reset()
         coordinator.displayedScale = 0

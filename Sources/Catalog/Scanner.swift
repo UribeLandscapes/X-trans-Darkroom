@@ -7,6 +7,11 @@ public struct ScanResult: Sendable, Equatable {
     public let scanned: Int
     public let updated: Int
     public let skipped: Int
+    public let removed: Int
+
+    public init(scanned: Int, updated: Int, skipped: Int, removed: Int = 0) {
+        self.scanned = scanned; self.updated = updated; self.skipped = skipped; self.removed = removed
+    }
 }
 
 public struct FolderScan: Sendable {
@@ -71,7 +76,10 @@ public struct Scanner: Sendable {
                 }
                 continuation.yield((offset + 1, files.count))
             }
-            return ScanResult(scanned: files.count, updated: updated, skipped: files.count - updated)
+            // Reached only after a full enumeration and index pass without error or cancellation.
+            try Task.checkCancellation()
+            let removed = try await catalog.prune(under: root.path, keeping: Set(files.map(\.path)))
+            return ScanResult(scanned: files.count, updated: updated, skipped: files.count - updated, removed: removed)
         }
         // Progress is optional observation: dropping the stream must not cancel an
         // indexing job whose result is still awaited. FolderScan.cancel owns cancellation.

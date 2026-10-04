@@ -7,6 +7,30 @@ import ImageCanvas
 @MainActor
 enum DevelopFeatureChecks {
     static func run(_ c: Checks) {
+        c.suite("Single editor window") { c in
+            let url = Checks.repoRoot().appendingPathComponent("Sources/App/XTransDarkroomApp.swift")
+            let source = try String(contentsOf: url, encoding: .utf8)
+            c.expect(!source.contains("WindowGroup"), "app declares no WindowGroup (one shared editor, one library)")
+            c.expect(source.contains("Window(\"X-Trans Darkroom\""), "app declares a single Window scene")
+        }
+        c.suite("Auto-crop containment") { c in
+            for aspect in [1.5, 2.0 / 3.0] {
+                for deg in [0.0, 5, 10, 45] {
+                    let s = GeometryAdjustments.autoCropScale(angleDegrees: deg, aspect: aspect)
+                    let a = deg * .pi / 180
+                    let w = aspect, h = 1.0
+                    let expected = min(w / (w * cos(a) + h * sin(a)), h / (w * sin(a) + h * cos(a)))
+                    c.expectClose(s, expected, "scale is maximal at \(deg) deg, aspect \(aspect)", tolerance: 1e-6)
+                    var inside = true
+                    for (sx, sy) in [(-1.0, -1.0), (1, -1), (-1, 1), (1, 1)] {
+                        let x = sx * w * s / 2, y = sy * h * s / 2
+                        let rx = x * cos(a) - y * sin(a), ry = x * sin(a) + y * cos(a)
+                        if abs(rx) > w / 2 + 1e-6 || abs(ry) > h / 2 + 1e-6 { inside = false }
+                    }
+                    c.expect(inside, "all corners inside rotated source at \(deg) deg, aspect \(aspect)")
+                }
+            }
+        }
         c.suite("Settings section isolation") { c in
             let old = try JSONDecoder().decode(EditStack.self, from: Data(#"{"color":{"temperature":6100}}"#.utf8))
             c.expect(!old.color.blackAndWhite && old.color.temperature == 6100, "old color fields decode with Color treatment")

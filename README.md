@@ -107,13 +107,6 @@ The SDK is pinned to 26.5 because the macOS 27 SDK that ships with the Command L
 
 Version 0.1.0. Local adjustment masks (gradients, brush, color range) are in progress and will come in a later release.
 
-## Known issues
-
-These are planned for 0.1.1:
-
-- Straighten can leave small empty corners at larger angles, both in the preview and in exports.
-- Exporting a RAW file from the Library before it has ever been opened in Develop skips the camera's own settings (as-shot exposure, tone and film profile), so it can look different from the same file exported after opening it.
-
 ## License
 
 MIT. See [LICENSE](LICENSE).
