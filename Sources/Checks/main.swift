@@ -6,6 +6,7 @@ let c = Checks()
 await MultiCameraChecks.run(c)
 await DataLossChecks.run(c)
 await CoordinatorChecks.run(c)
+StrictDecodeChecks.run(c)
 
 // ─────────────────────────────────────────────────────────────────────────────
 c.suite("EditStack serialization (Build plan §2)") { c in

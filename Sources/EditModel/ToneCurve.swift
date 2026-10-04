@@ -25,6 +25,13 @@ public struct ToneCurve: Codable, Equatable, Sendable {
         self.points = points.sorted { $0.x < $1.x }
     }
 
+    private enum CodingKeys: String, CodingKey { case points }
+    /// Missing or null `points` is the identity curve; a present but malformed value throws.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(points: try c.decodeIfPresent([Point].self, forKey: .points) ?? Self.identity.points)
+    }
+
     public var isIdentity: Bool { self == .identity }
 
     // MARK: Editing
@@ -129,9 +136,9 @@ public struct ToneCurveSet: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey { case composite, red, green, blue }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        composite = (try? c.decodeIfPresent(ToneCurve.self, forKey: .composite)).flatMap { $0 } ?? .identity
-        red       = (try? c.decodeIfPresent(ToneCurve.self, forKey: .red)).flatMap { $0 } ?? .identity
-        green     = (try? c.decodeIfPresent(ToneCurve.self, forKey: .green)).flatMap { $0 } ?? .identity
-        blue      = (try? c.decodeIfPresent(ToneCurve.self, forKey: .blue)).flatMap { $0 } ?? .identity
+        composite = (try c.decodeIfPresent(ToneCurve.self, forKey: .composite)) ?? .identity
+        red       = (try c.decodeIfPresent(ToneCurve.self, forKey: .red)) ?? .identity
+        green     = (try c.decodeIfPresent(ToneCurve.self, forKey: .green)) ?? .identity
+        blue      = (try c.decodeIfPresent(ToneCurve.self, forKey: .blue)) ?? .identity
     }
 }

@@ -11,7 +11,7 @@ public struct CustomAdjustments: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey { case glowAmount, glowRadius }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        glowAmount = c.value(.glowAmount, 0)
-        glowRadius = c.value(.glowRadius, 60)
+        glowAmount = try c.value(.glowAmount, 0)
+        glowRadius = try c.value(.glowRadius, 60)
     }
 }

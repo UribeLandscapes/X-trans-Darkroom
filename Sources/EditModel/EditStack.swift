@@ -46,20 +46,20 @@ public struct EditStack: Codable, Equatable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        version     = c.value(.version, 1)
-        fingerprint = c.value(.fingerprint, "")
-        light    = (try? c.decodeIfPresent(LightAdjustments.self,    forKey: .light))    .flatMap { $0 } ?? .neutral
-        curves   = (try? c.decodeIfPresent(ToneCurveSet.self,        forKey: .curves))   .flatMap { $0 } ?? .neutral
-        color    = (try? c.decodeIfPresent(ColorAdjustments.self,    forKey: .color))    .flatMap { $0 } ?? .neutral
-        hsl      = (try? c.decodeIfPresent(HSLMix.self,              forKey: .hsl))      .flatMap { $0 } ?? .neutral
-        grading  = (try? c.decodeIfPresent(ColorGrading.self,        forKey: .grading))  .flatMap { $0 } ?? .neutral
-        effects  = (try? c.decodeIfPresent(EffectsAdjustments.self,  forKey: .effects))  .flatMap { $0 } ?? .neutral
-        detail   = (try? c.decodeIfPresent(DetailAdjustments.self,   forKey: .detail))   .flatMap { $0 } ?? .neutral
-        optics   = (try? c.decodeIfPresent(OpticsAdjustments.self,   forKey: .optics))   .flatMap { $0 } ?? .neutral
-        geometry = (try? c.decodeIfPresent(GeometryAdjustments.self, forKey: .geometry)) .flatMap { $0 } ?? .neutral
-        custom = (try? c.decodeIfPresent(CustomAdjustments.self, forKey: .custom)) ?? .neutral
-        profileID = c.value(.profileID, "")
-        recipeID  = c.value(.recipeID, "")
+        version     = try c.value(.version, 1)
+        fingerprint = try c.value(.fingerprint, "")
+        light    = (try c.decodeIfPresent(LightAdjustments.self,    forKey: .light)) ?? .neutral
+        curves   = (try c.decodeIfPresent(ToneCurveSet.self,        forKey: .curves)) ?? .neutral
+        color    = (try c.decodeIfPresent(ColorAdjustments.self,    forKey: .color)) ?? .neutral
+        hsl      = (try c.decodeIfPresent(HSLMix.self,              forKey: .hsl)) ?? .neutral
+        grading  = (try c.decodeIfPresent(ColorGrading.self,        forKey: .grading)) ?? .neutral
+        effects  = (try c.decodeIfPresent(EffectsAdjustments.self,  forKey: .effects)) ?? .neutral
+        detail   = (try c.decodeIfPresent(DetailAdjustments.self,   forKey: .detail)) ?? .neutral
+        optics   = (try c.decodeIfPresent(OpticsAdjustments.self,   forKey: .optics)) ?? .neutral
+        geometry = (try c.decodeIfPresent(GeometryAdjustments.self, forKey: .geometry)) ?? .neutral
+        custom = (try c.decodeIfPresent(CustomAdjustments.self, forKey: .custom)) ?? .neutral
+        profileID = try c.value(.profileID, "")
+        recipeID  = try c.value(.recipeID, "")
         cameraSettings = try c.decodeIfPresent([String: String].self, forKey: .cameraSettings)
     }
 
@@ -88,12 +88,12 @@ public struct LightAdjustments: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey { case exposure, contrast, highlights, shadows, whites, blacks }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        exposure = c.value(.exposure, 0)
-        contrast = c.value(.contrast, 0)
-        highlights = c.value(.highlights, 0)
-        shadows = c.value(.shadows, 0)
-        whites = c.value(.whites, 0)
-        blacks = c.value(.blacks, 0)
+        exposure = try c.value(.exposure, 0)
+        contrast = try c.value(.contrast, 0)
+        highlights = try c.value(.highlights, 0)
+        shadows = try c.value(.shadows, 0)
+        whites = try c.value(.whites, 0)
+        blacks = try c.value(.blacks, 0)
     }
 
     public static let parameters: [Parameter] = [
@@ -122,11 +122,11 @@ public struct ColorAdjustments: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey { case temperature, tint, vibrance, saturation, blackAndWhite }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        blackAndWhite = c.value(.blackAndWhite, false)
-        temperature = c.value(.temperature, 0)
-        tint = c.value(.tint, 0)
-        vibrance = c.value(.vibrance, 0)
-        saturation = c.value(.saturation, 0)
+        blackAndWhite = try c.value(.blackAndWhite, false)
+        temperature = try c.value(.temperature, 0)
+        tint = try c.value(.tint, 0)
+        vibrance = try c.value(.vibrance, 0)
+        saturation = try c.value(.saturation, 0)
     }
 
     public static let parameters: [Parameter] = [
@@ -153,12 +153,12 @@ public struct EffectsAdjustments: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey { case texture, clarity, dehaze, grainAmount, grainSize, vignetteAmount }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        texture = c.value(.texture, 0)
-        clarity = c.value(.clarity, 0)
-        dehaze = c.value(.dehaze, 0)
-        grainAmount = c.value(.grainAmount, 0)
-        grainSize = c.value(.grainSize, 25)
-        vignetteAmount = c.value(.vignetteAmount, 0)
+        texture = try c.value(.texture, 0)
+        clarity = try c.value(.clarity, 0)
+        dehaze = try c.value(.dehaze, 0)
+        grainAmount = try c.value(.grainAmount, 0)
+        grainSize = try c.value(.grainSize, 25)
+        vignetteAmount = try c.value(.vignetteAmount, 0)
     }
 }
 
@@ -178,10 +178,10 @@ public struct DetailAdjustments: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey { case sharpenAmount, sharpenRadius, luminanceNR, colorNR }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        sharpenAmount = c.value(.sharpenAmount, 0)
-        sharpenRadius = c.value(.sharpenRadius, 1.0)
-        luminanceNR = c.value(.luminanceNR, 0)
-        colorNR = c.value(.colorNR, 0)
+        sharpenAmount = try c.value(.sharpenAmount, 0)
+        sharpenRadius = try c.value(.sharpenRadius, 1.0)
+        luminanceNR = try c.value(.luminanceNR, 0)
+        colorNR = try c.value(.colorNR, 0)
     }
 }
 
@@ -199,11 +199,11 @@ public struct OpticsAdjustments: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey { case builtInLensCorrection, correctDistortion, correctVignetting, removeChromaticAberration, profileSource }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        builtInLensCorrection = c.value(.builtInLensCorrection, true)
-        correctDistortion = c.value(.correctDistortion, true)
-        correctVignetting = c.value(.correctVignetting, true)
-        removeChromaticAberration = c.value(.removeChromaticAberration, true)
-        profileSource = c.value(.profileSource, "")
+        builtInLensCorrection = try c.value(.builtInLensCorrection, true)
+        correctDistortion = try c.value(.correctDistortion, true)
+        correctVignetting = try c.value(.correctVignetting, true)
+        removeChromaticAberration = try c.value(.removeChromaticAberration, true)
+        profileSource = try c.value(.profileSource, "")
     }
 }
 
@@ -260,16 +260,16 @@ public struct GeometryAdjustments: Codable, Equatable, Sendable {
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        straightenAngle = c.value(.straightenAngle, 0)
-        rotation = c.value(.rotation, 0)
-        flipHorizontal = c.value(.flipHorizontal, false)
-        flipVertical = c.value(.flipVertical, false)
-        perspectiveVertical = c.value(.perspectiveVertical, 0)
-        perspectiveHorizontal = c.value(.perspectiveHorizontal, 0)
-        transformScale = c.value(.transformScale, 1)
-        cropX = c.value(.cropX, 0)
-        cropY = c.value(.cropY, 0)
-        cropWidth = c.value(.cropWidth, 1)
-        cropHeight = c.value(.cropHeight, 1)
+        straightenAngle = try c.value(.straightenAngle, 0)
+        rotation = try c.value(.rotation, 0)
+        flipHorizontal = try c.value(.flipHorizontal, false)
+        flipVertical = try c.value(.flipVertical, false)
+        perspectiveVertical = try c.value(.perspectiveVertical, 0)
+        perspectiveHorizontal = try c.value(.perspectiveHorizontal, 0)
+        transformScale = try c.value(.transformScale, 1)
+        cropX = try c.value(.cropX, 0)
+        cropY = try c.value(.cropY, 0)
+        cropWidth = try c.value(.cropWidth, 1)
+        cropHeight = try c.value(.cropHeight, 1)
     }
 }

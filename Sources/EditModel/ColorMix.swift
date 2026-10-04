@@ -13,7 +13,7 @@ public struct HSLBand: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey { case hue, saturation, luminance }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        hue = c.value(.hue, 0); saturation = c.value(.saturation, 0); luminance = c.value(.luminance, 0)
+        hue = try c.value(.hue, 0); saturation = try c.value(.saturation, 0); luminance = try c.value(.luminance, 0)
     }
 }
 
@@ -50,7 +50,7 @@ public struct HSLMix: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey { case bands }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        bands = (try? c.decodeIfPresent([String: HSLBand].self, forKey: .bands)).flatMap { $0 } ?? [:]
+        bands = (try c.decodeIfPresent([String: HSLBand].self, forKey: .bands)) ?? [:]
     }
 }
 
@@ -79,10 +79,10 @@ public struct ColorGrading: Codable, Equatable, Sendable {
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        shadowHue = c.value(.shadowHue, 0); shadowSaturation = c.value(.shadowSaturation, 0)
-        midtoneHue = c.value(.midtoneHue, 0); midtoneSaturation = c.value(.midtoneSaturation, 0)
-        highlightHue = c.value(.highlightHue, 0); highlightSaturation = c.value(.highlightSaturation, 0)
-        blending = c.value(.blending, 50); balance = c.value(.balance, 0)
+        shadowHue = try c.value(.shadowHue, 0); shadowSaturation = try c.value(.shadowSaturation, 0)
+        midtoneHue = try c.value(.midtoneHue, 0); midtoneSaturation = try c.value(.midtoneSaturation, 0)
+        highlightHue = try c.value(.highlightHue, 0); highlightSaturation = try c.value(.highlightSaturation, 0)
+        blending = try c.value(.blending, 50); balance = try c.value(.balance, 0)
     }
 }
 
