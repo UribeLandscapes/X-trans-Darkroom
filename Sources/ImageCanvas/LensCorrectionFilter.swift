@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import CoreImage
 import RawDecode
 import ImagingCore
@@ -15,9 +16,28 @@ import ImagingCore
 /// Core Image Kernel Language at runtime. That API is deprecated but functional, and it is
 /// the only route to a custom warp without Xcode. If Xcode is installed later, these become
 /// Metal kernels with no change to the call sites.
-public final class LensCorrectionFilter: @unchecked Sendable {
+public final class LensCorrectionFilter: Sendable {
 
-    public init() {}
+    /// Margin floor for the warp ROI, so small corrections behave as they always did.
+    public static let minimumWarpMargin: CGFloat = 32
+
+    private struct GainEntry: Sendable {
+        let key: String
+        let map: CIImage
+    }
+
+    // Kernels are immutable and built once (lazy var initialisation is not thread-safe).
+    private let warpKernel: CIWarpKernel?
+    private let gainKernel: CIColorKernel?
+    private let channelKernel: CIColorKernel?
+    /// Cached gain map and its key, read and written together under one lock.
+    private let gainState = Mutex<GainEntry?>(nil)
+
+    public init() {
+        warpKernel = Self.makeWarpKernel()
+        gainKernel = Self.makeGainKernel()
+        channelKernel = Self.makeChannelKernel()
+    }
 
     /// Exposes compilation success so verification can detect a silent pass-through.
     public var kernelsAvailable: Bool {
@@ -27,7 +47,7 @@ public final class LensCorrectionFilter: @unchecked Sendable {
         return warp != nil && gain != nil && channel != nil
     }
 
-    private lazy var warpKernel: CIWarpKernel? = {
+    private static func makeWarpKernel() -> CIWarpKernel? {
         // r' = r · (1 + k1r² + k2r⁴ + k3r⁶), evaluated about the frame centre with radius
         // normalized to the half-diagonal so the model is resolution independent (§2).
         let source = """
@@ -40,9 +60,9 @@ public final class LensCorrectionFilter: @unchecked Sendable {
         }
         """
         return CIWarpKernel(source: source)
-    }()
+    }
 
-    private lazy var gainKernel: CIColorKernel? = {
+    private static func makeGainKernel() -> CIColorKernel? {
         // Multiplies the image by a gain map. Separate from the warp because vignetting is
         // a photometric correction and distortion is a geometric one.
         let source = """
@@ -51,9 +71,9 @@ public final class LensCorrectionFilter: @unchecked Sendable {
         }
         """
         return CIColorKernel(source: source)
-    }()
+    }
 
-    private lazy var channelKernel: CIColorKernel? = {
+    private static func makeChannelKernel() -> CIColorKernel? {
         // Recombines three separately-warped images into one, taking R from the first,
         // G from the second and B from the third - how per-channel CA correction works.
         let source = """
@@ -62,11 +82,7 @@ public final class LensCorrectionFilter: @unchecked Sendable {
         }
         """
         return CIColorKernel(source: source)
-    }()
-
-    /// Cached gain map, keyed on the correction data and extent it was built for.
-    private var gainCacheKey: String?
-    private var gainCache: CIImage?
+    }
 
     public func apply(_ image: CIImage,
                       correction: FujiLensCorrection,
@@ -94,8 +110,8 @@ public final class LensCorrectionFilter: @unchecked Sendable {
             let blue = correction.bluePolynomial
             if abs(red.k1) > 1e-9 || abs(blue.k1) > 1e-9,
                let kernel = warpKernel, let combine = channelKernel {
-                let r = warp(out, kernel: kernel, center: center, invRadius: invRadius, poly: red)
-                let b = warp(out, kernel: kernel, center: center, invRadius: invRadius, poly: blue)
+                let r = warp(out, kernel: kernel, center: center, invRadius: invRadius, halfDiagonal: halfDiagonal, poly: red)
+                let b = warp(out, kernel: kernel, center: center, invRadius: invRadius, halfDiagonal: halfDiagonal, poly: blue)
                 out = combine.apply(extent: extent, arguments: [r, out, b]) ?? out
             }
         }
@@ -105,20 +121,37 @@ public final class LensCorrectionFilter: @unchecked Sendable {
             // applying the inverse, so the polynomial's sign is flipped.
             let p = correction.distortionPolynomial
             let inverse = FujiLensCorrection.RadialPolynomial(k1: -p.k1, k2: -p.k2, k3: -p.k3)
-            out = warp(out, kernel: kernel, center: center, invRadius: invRadius, poly: inverse)
+            out = warp(out, kernel: kernel, center: center, invRadius: invRadius, halfDiagonal: halfDiagonal, poly: inverse)
         }
 
         return out.cropped(to: extent)
     }
 
     private func warp(_ image: CIImage, kernel: CIWarpKernel, center: CGPoint,
-                      invRadius: Float, poly: FujiLensCorrection.RadialPolynomial) -> CIImage {
-        kernel.apply(extent: image.extent,
-                     roiCallback: { _, rect in rect.insetBy(dx: -32, dy: -32) },
+                      invRadius: Float, halfDiagonal: CGFloat,
+                      poly: FujiLensCorrection.RadialPolynomial) -> CIImage {
+        let margin = Self.warpMargin(poly: poly, halfDiagonal: halfDiagonal)
+        return kernel.apply(extent: image.extent,
+                     roiCallback: { _, rect in rect.insetBy(dx: -margin, dy: -margin) },
                      image: image,
                      arguments: [CIVector(x: center.x, y: center.y),
                                  invRadius,
                                  Float(poly.k1), Float(poly.k2), Float(poly.k3)]) ?? image
+    }
+
+    /// Largest source-pixel displacement the warp can produce, so the ROI covers every sample.
+    /// Displacement is |r * (k1 r^2 + k2 r^4 + k3 r^6)| * halfDiagonal with r normalized to the
+    /// half-diagonal (1.0 is the corner); sampled out to 1.05 for safety.
+    public static func warpMargin(poly: FujiLensCorrection.RadialPolynomial, halfDiagonal: CGFloat) -> CGFloat {
+        let steps = 64, rMax = 1.05
+        var peak = 0.0
+        for i in 0...steps {
+            let r = rMax * Double(i) / Double(steps)
+            let r2 = r * r
+            peak = max(peak, abs(r * (poly.k1 * r2 + poly.k2 * r2 * r2 + poly.k3 * r2 * r2 * r2)))
+        }
+        let needed = (peak * Double(halfDiagonal)).rounded(.up) + 2
+        return max(minimumWarpMargin, CGFloat(needed))
     }
 
     /// The gain map uses the real nine-knot table rather than a polynomial fit: it is a
@@ -130,8 +163,8 @@ public final class LensCorrectionFilter: @unchecked Sendable {
 
         let key = "\(correction.vignetting)|\(Int(extent.width))x\(Int(extent.height))"
         let map: CIImage
-        if key == gainCacheKey, let cached = gainCache {
-            map = cached
+        if let hit = gainState.withLock({ $0 }), hit.key == key {
+            map = hit.map
         } else {
             let n = 128
             var pixels = [Float](repeating: 0, count: n * n * 4)
@@ -155,8 +188,7 @@ public final class LensCorrectionFilter: @unchecked Sendable {
             map = small.transformed(by: .init(scaleX: extent.width / CGFloat(n),
                                               y: extent.height / CGFloat(n)))
                 .transformed(by: .init(translationX: extent.minX, y: extent.minY))
-            gainCacheKey = key
-            gainCache = map
+            gainState.withLock { $0 = GainEntry(key: key, map: map) }
         }
 
         return gainKernel.apply(extent: extent, arguments: [image, map]) ?? image
