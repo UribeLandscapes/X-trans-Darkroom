@@ -1,5 +1,7 @@
 import Foundation
 import CoreImage
+import CryptoKit
+import Catalog
 import ImagingCore
 import EditModel
 import ImageCanvas
@@ -83,6 +85,22 @@ enum AdvisoryMediumChecks {
         colourNoiseChecks(c)
         rotateChecks(c)
         thumbnailKeyChecks(c)
+        renderVersionChecks(c)
+    }
+
+    private static func renderVersionChecks(_ c: Checks) {
+        c.suite("Thumbnail cache key carries a render version") { c in
+            let oldFormula = { (fp: String, edit: String, size: ThumbnailSize) -> String in
+                var hash = SHA256()
+                for part in [fp, edit, String(size.rawValue)] {
+                    hash.update(data: Data("\(part.utf8.count):".utf8)); hash.update(data: Data(part.utf8))
+                }
+                return hash.finalize().map { String(format: "%02x", $0) }.joined()
+            }
+            let now = ThumbnailCache.key(fingerprint: "fp", editHash: "e", size: .grid)
+            c.expect(now != oldFormula("fp", "e", .grid), "key differs from the pre-render-version formula")
+            c.expect(!ThumbnailCache.renderVersion.isEmpty, "renderVersion is set")
+        }
     }
 
     private static func colourNoiseChecks(_ c: Checks) {
