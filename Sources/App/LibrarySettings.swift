@@ -7,6 +7,7 @@ extension LibraryModel {
     /// as-shot start), then merged and saved here. A new paste cancels a running one; a scan cancels it too, except the scan this paste triggers itself
     /// (pasteTask is cleared first). Cancellation is checked after resolving and before every photo's write,
     /// so a cancelled paste writes nothing further (photos already written stay written).
+    /// A photo locked by an unreadable sidecar is never pasted onto: it counts as failed and its file stays untouched.
     func pasteSettings(_ clipboard: SettingsClipboard, editor: EditorModel) {
         pasteTask?.cancel()
         pasteToken += 1
@@ -32,7 +33,8 @@ extension LibraryModel {
             // live stack and re-read sidecars now. Cancelled before this point means zero writes.
             let outcome = LibraryExportStacks.applyPaste(
                 urls: urls, resolved: resolved, source: clipboard.stack, sections: clipboard.sections,
-                live: { editor.coordinator.sourceURL == $0 ? editor.stack : nil },
+                live: { LibraryExportStacks.liveStack(for: $0, openURL: editor.coordinator.sourceURL,
+                                                       stack: editor.stack, locked: editor.isSidecarLocked) },
                 load: { try Sidecar.load(forImageAt: $0) },
                 save: { url, stack in
                     var stack = stack

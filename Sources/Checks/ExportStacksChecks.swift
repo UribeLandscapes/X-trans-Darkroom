@@ -76,6 +76,22 @@ enum ExportStacksChecks {
                 save: { saved[$0] = $1; return $1 }, isCancelled: { false })
             c.expect(bad.failures == 0 && saved[open] == live.merging(clip, sections: sections),
                      "open photo pastes onto its live stack even when its sidecar is unreadable")
+            // Locked photo (unreadable sidecar kept untouched): no live stack, load throws, nothing saved.
+            let stack = EditStack.freshOpenDefault(for: open)
+            c.expect(LibraryExportStacks.liveStack(for: open, openURL: open, stack: stack, locked: true) == nil,
+                     "locked open photo gets no live stack")
+            c.expect(LibraryExportStacks.liveStack(for: open, openURL: open, stack: stack, locked: false) == stack,
+                     "unlocked open photo gets its live stack")
+            c.expect(LibraryExportStacks.liveStack(for: appeared, openURL: open, stack: stack, locked: false) == nil,
+                     "other photo gets no live stack")
+            saved = [:]
+            let lockedOut = LibraryExportStacks.applyPaste(
+                urls: [open], resolved: [.success(fresh)], source: clip, sections: sections,
+                live: { LibraryExportStacks.liveStack(for: $0, openURL: open, stack: live, locked: true) },
+                load: { _ in throw Unreadable() },
+                save: { saved[$0] = $1; return $1 }, isCancelled: { false })
+            c.expect(lockedOut.failures == 1 && saved.isEmpty && lockedOut.written.isEmpty,
+                     "paste onto a locked photo fails and never writes its sidecar")
         }
     }
 }

@@ -68,6 +68,13 @@ public enum LibraryExportStacks {
         return try resolved.get()
     }
 
+    /// Live editor stack a paste may merge into: only for the open photo, and never while its
+    /// sidecar is locked by a load failure (the caller then falls back to `load`, which fails).
+    public static func liveStack(for url: URL, openURL: URL?, stack: EditStack, locked: Bool) -> EditStack? {
+        guard !locked, let openURL, openURL.standardizedFileURL == url.standardizedFileURL else { return nil }
+        return stack
+    }
+
     /// Saves clipboard sections onto each destination. Stops with zero further writes once
     /// `isCancelled` is true, checked before every photo. Returns the stacks written and the failure count.
     public static func applyPaste(urls: [URL], resolved: [Swift.Result<EditStack, Error>],

@@ -55,6 +55,8 @@ final class EditorModel: ObservableObject {
     }
     private var sliderCoalescing = SliderCoalescing()
     private var persistence = SidecarPersistence()
+    /// True while the open photo's unreadable sidecar is kept untouched; nothing may overwrite it.
+    var isSidecarLocked: Bool { persistence.isLockedByLoadFailure }
     private var history = EditHistory(EditStack())
 
     var cameraSource: CameraSource { coordinator.cameraSource }
