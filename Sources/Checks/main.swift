@@ -171,6 +171,7 @@ await ExportLinkChecks.run(c)
 await ExportStacksChecks.run(c)
 
 AsShotCameraChecks.run(c)
+QuitGuardChecks.run(c)
 
 LayoutChecks.run(c)
 StudioOverlayChecks.run(c)

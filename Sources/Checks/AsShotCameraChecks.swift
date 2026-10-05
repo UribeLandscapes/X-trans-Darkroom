@@ -102,6 +102,16 @@ enum AsShotCameraChecks {
             c.expect(first.error == nil && first.stack.cameraSettings == shot.values && first.stack.light.shadows == -36
                      && first.stack.detail.colorNR == 25,
                      "first open applies as-shot: shadows=\(first.stack.light.shadows)/-36, settings=\(first.stack.cameraSettings?.count ?? 0)/\(shot.values.count)")
+            c.expect(first.stack.optics == EditStack.freshOpenDefault(for: firstURL).optics,
+                     "first-open keeps optics, so the thumbnail decoder's lens-correction flag matches")
+            let rafHash = ThumbnailEditKey.editHash(sidecar: nil, url: firstURL)
+            c.expect(rafHash != EditStack.freshOpenDefault(for: firstURL).settingsHash,
+                     "sidecar-less RAF thumbnail key differs from the old plain-default key")
+            let jpgURL = URL(fileURLWithPath: "/nowhere/a.jpg")
+            c.expect(ThumbnailEditKey.editHash(sidecar: nil, url: jpgURL) == EditStack.freshOpenDefault(for: jpgURL).settingsHash,
+                     "non-RAF thumbnail key is unchanged")
+            c.expect(ThumbnailEditKey.editHash(sidecar: first.stack, url: firstURL) == first.stack.settingsHash,
+                     "RAF with a sidecar keys on its stack as before")
             let plain = FirstOpenStack.resolve(for: URL(fileURLWithPath: "/nowhere/a.jpg"), asShot: nil, isFujifilmRAF: false,
                 profiles: emptyLibrary, context: context, cameraModel: "")
             c.expect(plain.stack == EditStack.freshOpenDefault(for: URL(fileURLWithPath: "/nowhere/a.jpg")),

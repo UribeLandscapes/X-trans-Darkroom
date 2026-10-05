@@ -25,6 +25,8 @@ final class LibraryModel: ObservableObject {
     private var allRows: [ImageRecord] = []
     private var dates: [String: Date] = [:]
     private var scanTask: Task<Void, Never>?
+    var pasteTask: Task<Void, Never>?
+    var pasteToken = 0
     private var generation = 0
     private let defaults: UserDefaults
     private let bookmarkKey = "library.rootBookmarks"
@@ -86,6 +88,7 @@ final class LibraryModel: ObservableObject {
     }
 
     func scan() {
+        pasteTask?.cancel()
         scanTask?.cancel()
         generation += 1
         let token = generation

@@ -352,6 +352,16 @@ final class EditorModel: ObservableObject {
         return saved
     }
 
+    /// Quit guard: retries a failed save; true when the app may terminate.
+    func mayTerminate(ask: (String) -> QuitGuard.Choice) -> Bool {
+        let outcome = QuitGuard.decide(isDirty: persistence.isDirty, retry: { [self] in
+            let decision = persistence.prepareSwitch(stack, currentSource: coordinator.sourceURL)
+            if case .blocked(let message) = decision { return message }
+            return nil
+        }, ask: ask)
+        return outcome == .terminateNow
+    }
+
     func canvasResized(to longEdge: Int) {
         guard abs(longEdge - canvasLongEdge) > 32 else { return }
         canvasLongEdge = longEdge
