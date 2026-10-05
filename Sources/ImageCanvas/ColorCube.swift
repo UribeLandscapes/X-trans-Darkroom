@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import CoreImage
 import EditModel
 
@@ -9,36 +10,34 @@ import EditModel
 /// CPU whenever the parameters change, then let the GPU apply it in one pass at any
 /// resolution. Rebuilds are cached by parameter hash, so a slider drag rebuilds once per
 /// value change (~1 ms at 17³) and every render in between is a free texture lookup.
-public final class ColorCubeCache: @unchecked Sendable {
+public final class ColorCubeCache: Sendable {
 
     /// 17 per axis: 4913 entries. Large enough that banding is invisible after the GPU's
     /// trilinear interpolation, small enough to rebuild inside a frame.
     private let dimension = 17
 
-    private var cachedKey: Int?
-    private var cachedData: Data?
+    /// Key and cube are stored as one value under one lock, so a reader can never pair the
+    /// key of one input with the data of another. The key is the inputs themselves (both are
+    /// Equatable), so a hash collision cannot return the wrong cube.
+    private struct Entry: Sendable {
+        let mix: HSLMix
+        let grading: ColorGrading
+        let data: Data
+    }
+    private let state = Mutex<Entry?>(nil)
 
     public init() {}
 
     public func cube(for mix: HSLMix, grading: ColorGrading) -> Data? {
         guard !mix.isNeutral || !grading.isNeutral else { return nil }
 
-        var hasher = Hasher()
-        for color in HSLColor.allCases {
-            let b = mix[color]
-            hasher.combine(b.hue); hasher.combine(b.saturation); hasher.combine(b.luminance)
+        if let hit = state.withLock({ $0 }), hit.mix == mix, hit.grading == grading {
+            return hit.data
         }
-        hasher.combine(grading.shadowHue); hasher.combine(grading.shadowSaturation)
-        hasher.combine(grading.midtoneHue); hasher.combine(grading.midtoneSaturation)
-        hasher.combine(grading.highlightHue); hasher.combine(grading.highlightSaturation)
-        hasher.combine(grading.blending); hasher.combine(grading.balance)
-        let key = hasher.finalize()
 
-        if key == cachedKey, let cachedData { return cachedData }
-
+        // Built outside the lock: a racing duplicate build is harmless, a blocked render is not.
         let data = Self.build(mix: mix, grading: grading, dimension: dimension)
-        cachedKey = key
-        cachedData = data
+        state.withLock { $0 = Entry(mix: mix, grading: grading, data: data) }
         return data
     }
 
