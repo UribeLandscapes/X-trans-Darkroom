@@ -62,7 +62,7 @@ enum CacheRaceChecks {
             let tables = [table { 100 - 60 * $0 * $0 }, table { 100 - 20 * $0 }]
             let sizes = [(300, 200), (240, 260)]
             let cases = tables.indices.flatMap { t in sizes.indices.map { (t, $0) } }
-            func apply(_ f: LensCorrectionFilter, _ k: Int) -> CIImage {
+            @Sendable func apply(_ f: LensCorrectionFilter, _ k: Int) -> CIImage {
                 let (t, s) = cases[k]
                 return f.apply(darkGrey(sizes[s].0, sizes[s].1), correction: tables[t],
                                distortion: false, vignetting: true, chromaticAberration: false)
@@ -80,7 +80,7 @@ enum CacheRaceChecks {
             let iterations = rounds * perRound
             var bad = 0
             for _ in 0..<rounds {
-                let filter = LensCorrectionFilter()   // fresh each round: cold lazy kernels + empty cache
+                let filter = LensCorrectionFilter()   // fresh each round: new kernels + empty cache
                 let results = ResultBox(count: perRound)
                 DispatchQueue.concurrentPerform(iterations: perRound) { i in
                     results.set(i, apply(filter, i % cases.count))
