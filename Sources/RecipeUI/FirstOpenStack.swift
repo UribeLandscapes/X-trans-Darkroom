@@ -3,6 +3,7 @@ import RawDecode
 import Recipes
 import EditModel
 import Profiles
+import CryptoKit
 
 /// The edit stack an unedited photo starts with. Develop open, Library export and
 /// anything else that needs "what would opening this photo give me" share this one rule.
@@ -124,9 +125,22 @@ public enum ThumbnailEditKey {
     /// versioned marker instead: stable for a given file (the as-shot data is a function of the
     /// file, whose fingerprint is already in the cache key) and different from the old
     /// plain-default key, so stale thumbnails are never reused.
-    public static func editHash(sidecar: EditStack?, url: URL) -> String {
+    ///
+    /// First-open resolution also depends on which profiles are installed (the as-shot film
+    /// simulation maps to one of them), so the RAF key includes a fingerprint of the library:
+    /// adding, changing or removing a profile re-renders those thumbnails. Sidecar and non-RAF
+    /// keys do not depend on the library.
+    public static func editHash(sidecar: EditStack?, url: URL, profiles: ProfileLibrary? = nil) -> String {
         if let sidecar { return sidecar.settingsHash }
         let plain = EditStack.freshOpenDefault(for: url).settingsHash
-        return url.pathExtension.lowercased() == "raf" ? plain + "|" + firstOpenVersion : plain
+        guard url.pathExtension.lowercased() == "raf" else { return plain }
+        return plain + "|" + firstOpenVersion + "|" + profileFingerprint(profiles)
+    }
+
+    /// Stable SHA-256 of the installed profile ids (each already a digest of the profile's
+    /// content) and camera models, sorted. Not `hashValue`: it must survive relaunches.
+    static func profileFingerprint(_ profiles: ProfileLibrary?) -> String {
+        let lines = (profiles?.profiles ?? []).map { $0.identifier + "@" + ($0.cameraModel ?? "") }.sorted()
+        return SHA256.hash(data: Data(lines.joined(separator: "\n").utf8)).map { String(format: "%02x", $0) }.joined()
     }
 }

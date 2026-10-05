@@ -14,7 +14,7 @@ enum ThumbnailRendering {
         let profiles = ProfileLibrary()
         // No sidecar: the photo shows its first-open (as-shot) look, resolved from the frame being rendered.
         return try await cache.thumbnail(for: source, fingerprint: row.fingerprint,
-                                         editHash: ThumbnailEditKey.editHash(sidecar: saved, url: source), size: .grid,
+                                         editHash: ThumbnailEditKey.editHash(sidecar: saved, url: source, profiles: profiles), size: .grid,
                                          builtInLensCorrection: stack.optics.builtInLensCorrection) { frame in
             let stack = saved ?? FirstOpenStack.resolve(frame: frame, for: source, profiles: profiles).stack
             let input = DecodedFrameInput(image: frame.image, asShotTemperature: frame.metadata.asShotTemperature,

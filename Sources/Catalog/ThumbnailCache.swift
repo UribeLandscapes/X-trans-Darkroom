@@ -42,10 +42,14 @@ public actor ThumbnailCache {
         try Self.trim(root: self.root, byteCeiling: byteCeiling)
     }
 
+    /// Bump whenever rendering output changes for the same edit stack (new or altered
+    /// filter maths), so cached thumbnails from the old renderer are never reused.
+    public nonisolated static let renderVersion = "render-2"
+
     public nonisolated static func key(fingerprint: String, editHash: String, size: ThumbnailSize) -> String {
         // Length framing avoids ambiguous concatenation. Including the edit hash
         // makes stale thumbnails structurally impossible, without invalidation passes.
-        let components = [fingerprint, editHash, String(size.rawValue)]
+        let components = [fingerprint, editHash, String(size.rawValue), renderVersion]
         var hash = SHA256()
         for component in components {
             hash.update(data: Data("\(component.utf8.count):".utf8))
