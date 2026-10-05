@@ -210,7 +210,8 @@ public struct OpticsAdjustments: Codable, Equatable, Sendable {
 public struct GeometryAdjustments: Codable, Equatable, Sendable {
     /// Degrees, positive = counter-clockwise. Applied about the frame centre.
     public var straightenAngle: Double = 0
-    /// Quarter turns applied before straightening: 0-3.
+    /// Quarter turns counter-clockwise (Core Image, y-up), applied before straightening: 0-3.
+    /// 1 = rotate left, 3 = rotate right. Saved sidecars depend on this meaning.
     public var rotation: Int = 0
     public var flipHorizontal: Bool = false
     public var flipVertical: Bool = false

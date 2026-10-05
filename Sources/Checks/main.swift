@@ -180,5 +180,6 @@ ViewportChecks.run(c)
 
 DevelopFeatureChecks.run(c)
 ShortcutChecks.run(c)
+AdvisoryMediumChecks.run(c)
 
 c.finish()

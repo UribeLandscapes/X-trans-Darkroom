@@ -150,12 +150,16 @@ extension RenderPipeline {
     func applyDetail(_ image: CIImage, _ detail: DetailAdjustments, proxyRatio: Double) -> CIImage {
         var out = image
 
-        if detail.luminanceNR > 0 || detail.colorNR > 0 {
+        if detail.luminanceNR > 0 {
             let f = CIFilter.noiseReduction()
             f.inputImage = out
             f.noiseLevel = Float(detail.luminanceNR / 100.0 * 0.05)
-            f.sharpness = Float(1.0 - detail.colorNR / 100.0 * 0.4)
+            f.sharpness = Self.noiseReductionSharpness
             out = (f.outputImage ?? out).cropped(to: image.extent)
+        }
+
+        if detail.colorNR > 0 {
+            out = smoothChroma(out, amount: detail.colorNR, proxyRatio: proxyRatio)
         }
 
         if detail.sharpenAmount != 0 {
@@ -167,6 +171,26 @@ extension RenderPipeline {
         }
 
         return out
+    }
+
+    /// CINoiseReduction sharpness at colorNR 0: colour NR no longer drives it.
+    private static let noiseReductionSharpness: Float = 1.0
+    /// Blur radius (full-resolution pixels) at colorNR 100.
+    private static let maxChromaBlurRadius = 6.0
+
+    /// Colour NR: blur a copy, then take only hue and saturation from the blur while the
+    /// original keeps its luminance, so chroma speckle smooths and edges stay sharp.
+    private func smoothChroma(_ image: CIImage, amount: Double, proxyRatio: Double) -> CIImage {
+        let extent = image.extent
+        guard !extent.isInfinite else { return image }
+        let blur = CIFilter.gaussianBlur()
+        blur.inputImage = image.clampedToExtent()
+        blur.radius = Float(amount / 100.0 * Self.maxChromaBlurRadius * proxyRatio)
+        guard let blurred = blur.outputImage?.cropped(to: extent) else { return image }
+        let blend = CIFilter.luminosityBlendMode()
+        blend.inputImage = image
+        blend.backgroundImage = blurred
+        return (blend.outputImage ?? image).cropped(to: extent)
     }
 
     // MARK: Stage 10 - Grain and vignette

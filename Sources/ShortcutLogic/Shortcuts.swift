@@ -19,6 +19,16 @@ public enum ShortcutAction: Hashable, Sendable {
     case clipping, whiteBalance, monochrome, crop, reset, sliderSelect(Int), sliderStep(Int)
     case copy, copyAll, paste, pastePrevious, export, importPhotos, undo, redo, open, rotate(Int), escape
 }
+/// Quarter-turn direction, in the renderer's convention: `GeometryAdjustments.rotation` counts
+/// counter-clockwise turns, so left is +1 and right is +3 (-1 mod 4). Shared by the Geometry
+/// buttons and the keyboard shortcuts so they cannot disagree.
+public enum QuarterTurn: Sendable {
+    case left, right
+    public var step: Int { self == .left ? 1 : 3 }
+    public func applied(to rotation: Int) -> Int { (rotation + step) % 4 }
+    /// Applies a raw `.rotate(step)` shortcut payload.
+    public static func apply(step: Int, to rotation: Int) -> Int { ((rotation + step) % 4 + 4) % 4 }
+}
 public struct ShortcutEntry: Identifiable, Sendable {
     public let id: String
     public let key: String
@@ -104,8 +114,8 @@ public enum ShortcutCatalog {
             ("copyAll", "c", [.command, .option], "Copy All Settings", .copyAll),
             ("paste", "v", [.command, .shift], "Paste Settings", .paste),
             ("pastePrevious", "v", [.command, .option], "Paste Settings from Previous", .pastePrevious),
-            ("rotateLeft", "[", .command, "Rotate left", .rotate(-1)),
-            ("rotateRight", "]", .command, "Rotate right", .rotate(1))] {
+            ("rotateLeft", "[", .command, "Rotate left", .rotate(QuarterTurn.left.step)),
+            ("rotateRight", "]", .command, "Rotate right", .rotate(QuarterTurn.right.step))] {
             add(id, key, mods, action == .paste ? .global : .develop, title, "Develop", action)
         }
         add("export", "e", [.command, .shift], .global, "Export…", "File", .export)

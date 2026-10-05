@@ -1,5 +1,6 @@
 import SwiftUI
 import EditModel
+import ShortcutLogic
 import StudioTheme
 
 /// Build plan §4 (Geometry): crop, straighten, and basic transform.
@@ -70,8 +71,8 @@ struct GeometryView: View {
 
     private var orientationRow: some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-            StudioButton("Rotate left", icon: .rotateLeft) { geometry.rotation = (geometry.rotation + 3) % 4; commitNow() }
-            StudioButton("Rotate right", icon: .rotateRight) { geometry.rotation = (geometry.rotation + 1) % 4; commitNow() }
+            StudioButton("Rotate left", icon: .rotateLeft) { geometry.rotation = QuarterTurn.left.applied(to: geometry.rotation); commitNow() }
+            StudioButton("Rotate right", icon: .rotateRight) { geometry.rotation = QuarterTurn.right.applied(to: geometry.rotation); commitNow() }
             StudioButton("Flip H", icon: .flipH) { geometry.flipHorizontal.toggle(); commitNow() }
             StudioButton("Flip V", icon: .flipV) { geometry.flipVertical.toggle(); commitNow() }
         }

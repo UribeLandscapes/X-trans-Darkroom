@@ -63,7 +63,7 @@ extension EditorView {
         case .redo: editor.redo()
         case .open: editor.presentOpenPanel()
         case .rotate(let direction):
-            editor.stack.geometry.rotation = (editor.stack.geometry.rotation + direction + 4) % 4
+            editor.stack.geometry.rotation = QuarterTurn.apply(step: direction, to: editor.stack.geometry.rotation)
             editor.live(); editor.commit()
         case .escape:
             if viewer.wbPickerActive { editor.cancelWhiteBalancePicker() }
