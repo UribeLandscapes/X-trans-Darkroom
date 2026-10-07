@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/banner.png" alt="X-trans Darkroom banner: pixel-art camera, X-Trans sensor grid and film strip under a red safelight" width="100%">
+</p>
+
 # X-trans Darkroom
 
 A native macOS RAW editor built around Fujifilm X-Trans files. It opens RAF files from cameras like the X-T5, gives you a Lightroom-style Develop panel, reads lens corrections straight out of the RAF, and can apply your Fujifilm film simulation recipes to a photo. It also opens Canon RAW, DNG (phones included), JPEG, HEIC, TIFF and PNG.
