@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.png" alt="X-trans Darkroom banner: pixel-art camera, X-Trans sensor grid and film strip under a red safelight" width="100%">
+  <img src="assets/banner.png" alt="X-Trans Darkroom banner: title over a tilted strip of film negatives with orange edge markings" width="100%">
 </p>
 
 # X-trans Darkroom
