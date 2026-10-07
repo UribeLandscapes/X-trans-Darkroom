@@ -109,7 +109,7 @@ The SDK is pinned to 26.5 because the macOS 27 SDK that ships with the Command L
 
 ## Status
 
-Version 0.1.0. Local adjustment masks (gradients, brush, color range) are in progress and will come in a later release.
+Version 0.1.1. Local adjustment masks (gradients, brush, color range) are in progress and will come in a later release.
 
 ## License
 
